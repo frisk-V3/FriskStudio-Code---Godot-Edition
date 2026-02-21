@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>FriskStudio Code - Godot Edition</title>
+
+<style>
+*{box-sizing:border-box}
+body{
+  margin:0;
+  background:#0f0f14;
+  color:#e5e5e5;
+  font-family:"Segoe UI",system-ui,sans-serif;
+}
+.header{
+  padding:14px 20px;
+  font-size:20px;
+  font-weight:bold;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  color:#fff;
+  box-shadow:0 3px 10px #0008;
+  background:linear-gradient(90deg,#4b6cff,#9a4bff);
+}
+
+/* 言語カードを広めに */
+#language-screen{
+  padding:20px;
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(240px,1fr));
+  gap:18px;
+}
+.lang-card{
+  padding:20px;
+  border-radius:14px;
+  box-shadow:0 0 12px #0006;
+  cursor:pointer;
+  border:1px solid #2a2a33;
+  color:#fff;
+  font-size:15px;
+  transition:.18s;
+}
+.lang-card:hover{
+  transform:translateY(-4px);
+  box-shadow:0 8px 18px #0009;
+  border-color:#fff;
+}
+.lang-name{
+  font-weight:700;
+  margin-bottom:6px;
+  font-size:18px;
+}
+.cat-script{background:radial-gradient(circle at top left,#ffcc4b,#1a1a22)}
+.cat-c{background:radial-gradient(circle at top left,#4bff7a,#1a1a22)}
+
+#editor-screen{
+  height:calc(100vh - 52px);
+  display:none;
+  flex-direction:column;
+}
+.editor-top{
+  padding:8px 16px;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  background:#1a1a22;
+  box-shadow:0 3px 10px #0008;
+  font-size:14px;
+}
+.editor-left{
+  display:flex;
+  align-items:center;
+  gap:10px;
+}
+.back-btn{
+  cursor:pointer;
+  padding:4px 10px;
+  border-radius:6px;
+  background:#333;
+}
+.back-btn:hover{background:#555}
+
+#editor-area{
+  flex:1;
+  display:flex;
+  min-height:0;
+}
+#editor-container{
+  flex:1;
+  min-width:0;
+}
+
+.btn{
+  padding:6px 12px;
+  border-radius:6px;
+  background:#3a3a3a;
+  cursor:pointer;
+  font-size:13px;
+  border:none;
+  color:#eee;
+}
+.btn:hover{background:#505050}
+
+/* 左下の丸ボタン（設定 & 開く） */
+.circle-btn{
+  position:fixed;
+  bottom:20px;
+  width:55px;
+  height:55px;
+  border-radius:50%;
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  font-size:26px;
+  cursor:pointer;
+  box-shadow:0 6px 20px #0008;
+  transition:.25s;
+  color:#fff;
+  z-index:20;
+}
+.circle-btn:hover{transform:scale(1.1)}
+
+#settingsBtn{
+  left:20px;
+  background:#4b6cff;
+}
+#openFileBtn{
+  left:90px;
+  background:#6f4bff;
+}
+</style>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.0/min/vs/loader.min.js"></script>
+<script>
+window.monacoReady=false;
+window.monacoQueue=[];
+require.config({paths:{'vs':'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.0/min/vs'}});
+require(['vs/editor/editor.main'],()=>{
+  window.monacoReady=true;
+  window.monacoQueue.forEach(fn=>fn());
+  window.monacoQueue=[];
+});
+</script>
+</head>
+<body>
+
+<div class="header" id="headerBar">
+  <div>FriskStudio Code - Godot Edition</div>
+  <div style="font-size:12px;opacity:.8;">Godot 用 4言語 IDE</div>
+</div>
+
+<div id="language-screen">
+  <div class="lang-card cat-script" onclick="selectLanguage('gdscript')">
+    <div class="lang-name">GDScript</div>
+    <div>Godot 4 Script</div>
+  </div>
+
+  <div class="lang-card cat-c" onclick="selectLanguage('csharp')">
+    <div class="lang-name">C#</div>
+    <div>Godot C#</div>
+  </div>
+
+  <div class="lang-card cat-c" onclick="selectLanguage('c')">
+    <div class="lang-name">C</div>
+    <div>GDNative C</div>
+  </div>
+
+  <div class="lang-card cat-c" onclick="selectLanguage('cpp')">
+    <div class="lang-name">C++</div>
+    <div>GDNative C++</div>
+  </div>
+</div>
+
+<div id="editor-screen">
+  <div class="editor-top">
+    <div class="editor-left">
+      <div class="back-btn" onclick="goBack()">← 戻る</div>
+      <div id="editor-title">Editor</div>
+    </div>
+    <button class="btn" id="downloadBtn">DL</button>
+  </div>
+
+  <div id="editor-area">
+    <div id="editor-container"></div>
+  </div>
+</div>
+
+<!-- 左下の丸ボタン -->
+<div id="settingsBtn" class="circle-btn">⚙</div>
+<div id="openFileBtn" class="circle-btn">📁</div>
+
+<!-- 隠しファイル入力（フォールバック用） -->
+<input type="file" id="fileInput" style="display:none" accept=".gd,.cs,.c,.cpp">
+
+<script>
+let currentLang=null;
+let editor=null;
+let currentFileHandle=null;
+let currentFileName=null;
+
+function selectLanguage(lang){
+  currentLang=lang;
+  currentFileHandle=null;
+  currentFileName=null;
+  document.getElementById("language-screen").style.display="none";
+  document.getElementById("editor-screen").style.display="flex";
+  document.getElementById("editor-title").textContent=displayName(lang)+" Editor";
+  document.getElementById("downloadBtn").textContent="DL "+getExt(lang);
+  initEditor(false);
+}
+
+function goBack(){
+  document.getElementById("editor-screen").style.display="none";
+  document.getElementById("language-screen").style.display="grid";
+}
+
+function initEditor(fromFile){
+  const run=()=>{
+    const langId=mapLang(currentLang);
+    const value=fromFile ? (editor?editor.getValue():"") : getDefault(currentLang);
+    if(!editor){
+      editor=monaco.editor.create(document.getElementById("editor-container"),{
+        value,
+        language:langId,
+        theme:"vs-dark",
+        automaticLayout:true
+      });
+    }else{
+      monaco.editor.setModelLanguage(editor.getModel(),langId);
+      if(!fromFile) editor.setValue(value);
+    }
+  };
+  if(window.monacoReady)run(); else window.monacoQueue.push(run);
+}
+
+function mapLang(l){
+  return{
+    gdscript:"python",
+    csharp:"csharp",
+    c:"c",
+    cpp:"cpp"
+  }[l]||"plaintext";
+}
+
+function displayName(l){
+  return{
+    gdscript:"GDScript",
+    csharp:"C#",
+    c:"C",
+    cpp:"C++"
+  }[l]||l;
+}
+
+function getExt(l){
+  return{
+    gdscript:".gd",
+    csharp:".cs",
+    c:".c",
+    cpp:".cpp"
+  }[l]||".txt";
+}
+
+function getDefault(l){
+  if(l==="gdscript")return`extends Node
+
+func _ready():
+    print("Hello from FriskStudio Code!")`;
+
+  if(l==="csharp")return`using Godot;
+
+public partial class Script : Node
+{
+    public override void _Ready()
+    {
+        GD.Print("Hello from FriskStudio Code (C#)");
+    }
+}`;
+
+  if(l==="c")return`#include <stdio.h>
+
+int main(){
+    printf("Hello from FriskStudio Code (C)\\n");
+    return 0;
+}`;
+
+  if(l==="cpp")return`#include <iostream>
+
+int main(){
+    std::cout << "Hello from FriskStudio Code (C++)" << std::endl;
+    return 0;
+}`;
+  return "";
+}
+
+/* DL ボタン（フォールバック保存にも使う） */
+document.getElementById("downloadBtn").onclick=()=>{
+  if(!editor)return;
+  const blob=new Blob([editor.getValue()],{type:"text/plain"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  const name=currentFileName || ("code"+getExt(currentLang));
+  a.download=name;
+  a.click();
+  URL.revokeObjectURL(a.href);
+};
+
+/* 📁 ボタン：ファイルを開く */
+document.getElementById("openFileBtn").onclick=async()=>{
+  if(window.showOpenFilePicker){
+    try{
+      const [handle]=await window.showOpenFilePicker({
+        types:[{
+          description:"Godot Scripts",
+          accept:{
+            "text/plain":[".gd",".cs",".c",".cpp"]
+          }
+        }]
+      });
+      currentFileHandle=handle;
+      const file=await handle.getFile();
+      const text=await file.text();
+      detectLangFromExt(file.name);
+      currentFileName=file.name;
+      document.getElementById("language-screen").style.display="none";
+      document.getElementById("editor-screen").style.display="flex";
+      document.getElementById("editor-title").textContent=file.name+" - "+displayName(currentLang)+" Editor";
+      const run=()=>{
+        const langId=mapLang(currentLang);
+        if(!editor){
+          editor=monaco.editor.create(document.getElementById("editor-container"),{
+            value:text,
+            language:langId,
+            theme:"vs-dark",
+            automaticLayout:true
+          });
+        }else{
+          monaco.editor.setModelLanguage(editor.getModel(),langId);
+          editor.setValue(text);
+        }
+      };
+      if(window.monacoReady)run(); else window.monacoQueue.push(run);
+    }catch(e){
+      console.log(e);
+    }
+  }else{
+    document.getElementById("fileInput").click();
+  }
+};
+
+/* 非対応ブラウザ用：input file */
+document.getElementById("fileInput").addEventListener("change",async e=>{
+  const file=e.target.files[0];
+  if(!file)return;
+  const text=await file.text();
+  detectLangFromExt(file.name);
+  currentFileHandle=null;
+  currentFileName=file.name;
+  document.getElementById("language-screen").style.display="none";
+  document.getElementById("editor-screen").style.display="flex";
+  document.getElementById("editor-title").textContent=file.name+" - "+displayName(currentLang)+" Editor";
+  const run=()=>{
+    const langId=mapLang(currentLang);
+    if(!editor){
+      editor=monaco.editor.create(document.getElementById("editor-container"),{
+        value:text,
+        language:langId,
+        theme:"vs-dark",
+        automaticLayout:true
+      });
+    }else{
+      monaco.editor.setModelLanguage(editor.getModel(),langId);
+      editor.setValue(text);
+    }
+  };
+  if(window.monacoReady)run(); else window.monacoQueue.push(run);
+});
+
+/* 拡張子から言語を推定 */
+function detectLangFromExt(name){
+  const lower=name.toLowerCase();
+  if(lower.endsWith(".gd")) currentLang="gdscript";
+  else if(lower.endsWith(".cs")) currentLang="csharp";
+  else if(lower.endsWith(".c")) currentLang="c";
+  else if(lower.endsWith(".cpp")||lower.endsWith(".cc")||lower.endsWith(".cxx")) currentLang="cpp";
+  else currentLang="gdscript";
+}
+
+/* Ctrl+S で保存（File System Access API があれば上書き） */
+window.addEventListener("keydown",async e=>{
+  if(e.key==="s" && (e.ctrlKey||e.metaKey)){
+    e.preventDefault();
+    if(editor && currentFileHandle && currentFileHandle.createWritable){
+      try{
+        const writable=await currentFileHandle.createWritable();
+        await writable.write(editor.getValue());
+        await writable.close();
+      }catch(err){
+        console.log(err);
+      }
+    }else{
+      document.getElementById("downloadBtn").click();
+    }
+  }
+});
+</script>
+
+</body>
+</html>
